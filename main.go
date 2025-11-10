@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"sort"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -404,7 +405,21 @@ func (cfg *apiConfig) handlerGetChirps(w http.ResponseWriter, r *http.Request) {
 		Error string `json:"error"`
 	}
 
-	dbChirps, err := cfg.db.GetAllChirps(r.Context())
+	authorIDStr := r.URL.Query().Get("author_id")
+	var dbChirps []database.Chirp
+	var err error
+
+	if authorIDStr != "" {
+		authorID, parseErr := uuid.Parse(authorIDStr)
+		if parseErr != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		dbChirps, err = cfg.db.GetChirpsByAuthor(r.Context(), authorID)
+	} else {
+		dbChirps, err = cfg.db.GetAllChirps(r.Context())
+	}
+
 	if err != nil {
 		log.Printf("Error getting chirps: %v", err)
 		w.Header().Set("Content-Type", "application/json")
@@ -422,6 +437,13 @@ func (cfg *apiConfig) handlerGetChirps(w http.ResponseWriter, r *http.Request) {
 			Body:      dbChirp.Body,
 			UserID:    dbChirp.UserID,
 		}
+	}
+
+	sortOrder := r.URL.Query().Get("sort")
+	if sortOrder == "desc" {
+		sort.Slice(chirps, func(i, j int) bool {
+			return chirps[i].CreatedAt.After(chirps[j].CreatedAt)
+		})
 	}
 
 	w.Header().Set("Content-Type", "application/json")
